@@ -15,7 +15,43 @@ function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':
 function spreadHTML(pos){const p=current().pages;return `<div class="spread">${pageHTML(p[1+pos*2],'left')}${pageHTML(p[2+pos*2],'right')}<div class="spine"></div></div>`}
 function renderBook(){const a=current(),b=$('book'),inner=$('bookInner');b.classList.toggle('closed',position<0);b.classList.toggle('open',position>=0);if(position<0){inner.innerHTML=`<img class="cover" src="${a.pages[0]?.src||''}" alt="Обложка альбома" title="Нажми, чтобы открыть">`;$('counter').textContent='Закрытая книга';$('nextBtn').textContent='Открыть альбом →';$('prevBtn').disabled=true}else{inner.innerHTML=spreadHTML(position);$('counter').textContent=`${Math.min(1+position*2,a.pages.length-1)}–${Math.min(2+position*2,a.pages.length-1)} / ${Math.max(0,a.pages.length-1)}`;$('nextBtn').textContent=(position+1)*2+1>=a.pages.length?'Закрыть книгу →':'Вперёд →';$('prevBtn').disabled=false} }
 function rustle(){if(!sound)return;try{const ctx=new (window.AudioContext||window.webkitAudioContext)(),len=Math.round(ctx.sampleRate*.23),buf=ctx.createBuffer(1,len,ctx.sampleRate),data=buf.getChannelData(0);for(let i=0;i<len;i++)data[i]=(Math.random()*2-1)*Math.sin(Math.PI*i/len);const src=ctx.createBufferSource(),filter=ctx.createBiquadFilter(),gain=ctx.createGain();filter.type='bandpass';filter.frequency.value=1300;filter.Q.value=.7;gain.gain.value=.11;src.buffer=buf;src.connect(filter);filter.connect(gain);gain.connect(ctx.destination);src.start();src.onended=()=>ctx.close()}catch{}}
-function flip(dir){if(animating)return;const p=current().pages;if(dir===1&&position<0){position=0;rustle();renderBook();return}if(dir===-1&&position===0){position=-1;rustle();renderBook();return}if(position<0)return;if(dir===1&&1+(position+1)*2>=p.length){position=-1;rustle();renderBook();return}if(dir===-1&&position<1)return;const from=position,to=position+dir,inner=$('bookInner');if(dir===1&&1+to*2>=p.length)return;animating=true;const sheet=document.createElement('div');sheet.className='turnsheet '+(dir===1?'forward':'backward');const front=dir===1?p[2+from*2]:p[1+from*2],back=dir===1?p[1+to*2]:p[2+to*2];inner.innerHTML=spreadHTML(to);sheet.innerHTML=`<div class="face front">${front?`<img src="${front.src}">`:''}</div><div class="face back">${back?`<img src="${back.src}">`:''}</div>`;inner.append(sheet);rustle();setTimeout(()=>{position=to;animating=false;renderBook()},850)}
+function flip(dir){
+  if(animating)return;
+  const p=current().pages;
+  if(dir===1&&position<0){position=0;rustle();renderBook();return}
+  if(dir===-1&&position===0){position=-1;rustle();renderBook();return}
+  if(position<0)return;
+  if(dir===1&&1+(position+1)*2>=p.length){position=-1;rustle();renderBook();return}
+  if(dir===-1&&position<1)return;
+  const from=position,to=position+dir,inner=$('bookInner');
+  if(dir===1&&1+to*2>=p.length)return;
+  animating=true;
+  const oldLeft=p[1+from*2],oldRight=p[2+from*2];
+  const newLeft=p[1+to*2],newRight=p[2+to*2];
+  // Keep the page that is not moving intact until the sheet has crossed the spine.
+  // The moving sheet hides the page underneath until the correct moment.
+  inner.innerHTML=`<div class="spread">${pageHTML(dir===1?oldLeft:newLeft,'left')}${pageHTML(dir===1?newRight:oldRight,'right')}<div class="spine"></div></div>`;
+  const sheet=document.createElement('div');
+  sheet.className='turnsheet '+(dir===1?'forward':'backward');
+  const front=dir===1?oldRight:oldLeft;
+  const back=dir===1?newLeft:newRight;
+  sheet.innerHTML=`<div class="face front">${front?`<img src="${front.src}" alt="">`:''}</div><div class="face back">${back?`<img src="${back.src}" alt="">`:''}</div>`;
+  inner.append(sheet);
+  rustle();
+  let finished=false;
+  const finish=()=>{if(finished)return;finished=true;position=to;animating=false;renderBook()};
+  // After the sheet passes 90 degrees, its back covers the opposite page.
+  // Only then replace that page, avoiding an early visible image jump.
+  const midpoint=setTimeout(()=>{
+    if(finished)return;
+    const spread=inner.querySelector('.spread');
+    if(!spread)return;
+    const target=spread.querySelector(dir===1?'.page.left':'.page.right');
+    if(target){const wrapper=document.createElement('div');wrapper.innerHTML=pageHTML(dir===1?newLeft:newRight,dir===1?'left':'right');target.replaceWith(wrapper.firstElementChild)}
+  },440);
+  sheet.addEventListener('animationend',()=>{clearTimeout(midpoint);finish()},{once:true});
+  setTimeout(()=>{clearTimeout(midpoint);finish()},1100);
+}
 function showHotspot(id){const h=current().pages.flatMap(p=>p.hotspots||[]).find(h=>h.id===id);if(!h)return;$('modalTitle').textContent=h.label||'Для тебя ♡';$('modalBody').innerHTML=h.type==='image'&&h.image?`<img src="${h.image}" alt="Скрытое воспоминание">`:`<div class="letter">${escapeHTML(h.text||'♡')}</div>`;$('modal').classList.remove('hidden')}
 $('bookInner').addEventListener('click',e=>{const hotspot=e.target.closest('[data-hotspot]');if(hotspot){showHotspot(hotspot.dataset.hotspot);return}if(position<0){flip(1);return}const rect=$('bookInner').getBoundingClientRect();flip(e.clientX-rect.left<rect.width*.5?-1:1)});
 $('nextBtn').onclick=()=>flip(1);$('prevBtn').onclick=()=>flip(-1);
